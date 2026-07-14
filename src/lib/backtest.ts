@@ -30,6 +30,8 @@ export type BacktestParams = {
   useVolumeFilter: boolean; // solo entra si el volumen confirma
   volumeFactor: number; // volumen actual >= promedio * factor
   useMultiTimeframe: boolean; // solo entra si el marco mayor (semanal) también es alcista
+  // Gestión (Soros/Kelly): apostar más fuerte con señal más fuerte.
+  useConviction: boolean; // tamaño de la compra proporcional a la fuerza de la señal
 };
 
 export const DEFAULT_PARAMS: BacktestParams = {
@@ -50,6 +52,7 @@ export const DEFAULT_PARAMS: BacktestParams = {
   useVolumeFilter: false,
   volumeFactor: 1.3,
   useMultiTimeframe: false,
+  useConviction: true,
 };
 
 export type BacktestTrade = {
@@ -214,12 +217,17 @@ export function runBacktest(
         closeAt(c, "signal");
       }
     } else if (score > p.threshold && regimeBullish && volOK && mtfOK) {
-      // Entrada: todo el capital disponible (con régimen, volumen y marco mayor a favor).
-      qty = cash / c.close;
+      // Entrada. Con convicción, el tamaño es proporcional a la fuerza de la
+      // señal (más fuerte = más grande); sin ella, va todo el capital.
+      const frac = p.useConviction
+        ? Math.max(0.3, Math.min(1, (score - p.threshold) / (1 - p.threshold)))
+        : 1;
+      const usd = cash * frac;
+      qty = usd / c.close;
       entryPrice = c.close;
       entryTime = c.time;
       peakSinceEntry = c.close;
-      cash = 0;
+      cash -= usd;
     }
 
     const equity = cash + qty * c.close;
