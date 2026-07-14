@@ -88,6 +88,7 @@ export function useTrades(limit = 30) {
       if (error) throw error;
       return (data ?? []) as Trade[];
     },
+    refetchInterval: 15_000, // en vivo: refresca cada 15s
   });
 }
 
