@@ -125,35 +125,84 @@ function templateRationale(symbol: string, s: Signals, action: string): string {
   return `${verbo} ${symbol}: ${parts.join(", ")}.`;
 }
 
+// Explicación con IA. Prioridad de proveedor según el secret disponible:
+// ANTHROPIC_API_KEY -> OPENAI_API_KEY -> LOVABLE_API_KEY -> texto templado.
+// Así podés pasar de los créditos de Lovable a tu propia key sin tocar código.
+const SYSTEM_PROMPT =
+  "Sos un trader cripto experto. Explicá en 2-3 frases, en español rioplatense, por qué la decisión sugerida tiene sentido según las señales. Sé concreto, mencioná las señales que más pesan. No des consejo financiero personalizado; es un análisis educativo.";
+
 async function aiRationale(symbol: string, s: Signals, action: string): Promise<string> {
-  const key = Deno.env.get("LOVABLE_API_KEY");
-  if (!key) return templateRationale(symbol, s, action);
+  const userMsg = `Moneda ${symbol}. Decisión: ${action}. Señales -> order book imbalance: ${s.imbalance.toFixed(2)}, CVD: ${s.cvd.toFixed(2)}, tendencia: ${s.trend}, RSI: ${s.rsi?.toFixed(0) ?? "n/d"}, sentimiento noticias: ${s.newsScore.toFixed(2)}.`;
+
+  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+
   try {
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content:
-              "Sos un trader cripto experto. Explicá en 2-3 frases, en español rioplatense, por qué la decisión sugerida tiene sentido según las señales. Sé concreto, mencioná las señales que más pesan. No des consejo financiero personalizado; es un análisis educativo.",
-          },
-          {
-            role: "user",
-            content: `Moneda ${symbol}. Decisión: ${action}. Señales -> order book imbalance: ${s.imbalance.toFixed(2)}, CVD: ${s.cvd.toFixed(2)}, tendencia: ${s.trend}, RSI: ${s.rsi?.toFixed(0) ?? "n/d"}, sentimiento noticias: ${s.newsScore.toFixed(2)}.`,
-          },
-        ],
-      }),
-    });
-    if (!res.ok) return templateRationale(symbol, s, action);
-    const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content?.trim();
-    return text || templateRationale(symbol, s, action);
+    if (anthropicKey) {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 250,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: "user", content: userMsg }],
+        }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const text = d?.content?.[0]?.text?.trim();
+        if (text) return text;
+      }
+    } else if (openaiKey) {
+      const res = await openaiCompat(
+        "https://api.openai.com/v1/chat/completions",
+        openaiKey,
+        "gpt-4o-mini",
+        userMsg,
+      );
+      if (res) return res;
+    } else if (lovableKey) {
+      const res = await openaiCompat(
+        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        lovableKey,
+        "google/gemini-2.5-flash",
+        userMsg,
+      );
+      if (res) return res;
+    }
   } catch (_e) {
-    return templateRationale(symbol, s, action);
+    /* cae al templado */
   }
+  return templateRationale(symbol, s, action);
+}
+
+/** Llama a un endpoint compatible con la API de OpenAI (OpenAI, Lovable gateway). */
+async function openaiCompat(
+  url: string,
+  key: string,
+  model: string,
+  userMsg: string,
+): Promise<string | null> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userMsg },
+      ],
+    }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data?.choices?.[0]?.message?.content?.trim() || null;
 }
 
 // ---------- núcleo: analizar una moneda para un usuario ----------
@@ -182,24 +231,173 @@ async function analyzeCoin(
   const { action, confidence } = decide(signals);
   const rationale = await aiRationale(symbol, signals, action);
 
-  await admin.from("decisions").insert({
-    user_id: userId,
-    symbol,
-    asset_type: "crypto",
+  const { data: decision } = await admin
+    .from("decisions")
+    .insert({
+      user_id: userId,
+      symbol,
+      asset_type: "crypto",
+      action,
+      confidence,
+      rationale,
+      indicators: {
+        rsi: signals.rsi,
+        trend: signals.trend,
+        imbalance: signals.imbalance,
+        cvd: signals.cvd,
+      },
+      sentiment: { newsScore },
+      price_at_decision: signals.price,
+    })
+    .select("id")
+    .single();
+
+  const executed = await executeDecision(
+    admin,
+    userId,
+    pair,
     action,
     confidence,
-    rationale,
-    indicators: {
-      rsi: signals.rsi,
-      trend: signals.trend,
-      imbalance: signals.imbalance,
-      cvd: signals.cvd,
-    },
-    sentiment: { newsScore },
-    price_at_decision: signals.price,
-  });
+    signals.price,
+  );
+  if (executed && decision?.id) {
+    await admin.from("decisions").update({ executed: true }).eq("id", decision.id);
+  }
 
-  return { symbol, action, confidence };
+  return { symbol, action, confidence, executed };
+}
+
+/**
+ * Ejecuta la decisión sobre el portafolio simulado respetando guardarraíles:
+ * agente no pausado, confianza mínima, límite de pérdida diaria y tamaño
+ * máximo por posición. Devuelve true si operó.
+ */
+async function executeDecision(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  pair: string,
+  action: "buy" | "sell" | "hold",
+  confidence: number,
+  price: number,
+): Promise<boolean> {
+  if (action === "hold" || price <= 0) return false;
+
+  const { data: portfolio } = await admin
+    .from("portfolios")
+    .select("id, cash_balance, initial_balance, is_paused")
+    .eq("user_id", userId)
+    .single();
+  if (!portfolio || portfolio.is_paused) return false;
+
+  const { data: risk } = await admin
+    .from("risk_settings")
+    .select("min_confidence, max_position_pct, max_daily_loss_pct")
+    .eq("user_id", userId)
+    .single();
+  const minConf = Number(risk?.min_confidence ?? 0.6);
+  const maxPosPct = Number(risk?.max_position_pct ?? 25);
+  const maxDailyLossPct = Number(risk?.max_daily_loss_pct ?? 5);
+  if (confidence < minConf) return false;
+
+  // Límite de pérdida diaria: si ya se superó, pausar y no operar.
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const { data: todayTrades } = await admin
+    .from("trades")
+    .select("pnl")
+    .eq("user_id", userId)
+    .gte("executed_at", startOfDay.toISOString());
+  const realizedToday = (todayTrades ?? []).reduce(
+    (sum: number, t: { pnl: number | null }) => sum + (Number(t.pnl) || 0),
+    0,
+  );
+  const initial = Number(portfolio.initial_balance);
+  if (realizedToday <= -(initial * (maxDailyLossPct / 100))) {
+    await admin.from("portfolios").update({ is_paused: true }).eq("id", portfolio.id);
+    return false;
+  }
+
+  const cash = Number(portfolio.cash_balance);
+
+  if (action === "buy") {
+    const usd = Math.min((maxPosPct / 100) * initial, cash);
+    if (usd < 1) return false;
+    const qty = usd / price;
+
+    const { data: existing } = await admin
+      .from("positions")
+      .select("id, quantity, avg_price")
+      .eq("portfolio_id", portfolio.id)
+      .eq("symbol", pair)
+      .maybeSingle();
+
+    if (existing) {
+      const oldQty = Number(existing.quantity);
+      const oldAvg = Number(existing.avg_price);
+      const newQty = oldQty + qty;
+      await admin
+        .from("positions")
+        .update({
+          quantity: newQty,
+          avg_price: (oldQty * oldAvg + qty * price) / newQty,
+        })
+        .eq("id", existing.id);
+    } else {
+      await admin.from("positions").insert({
+        portfolio_id: portfolio.id,
+        user_id: userId,
+        symbol: pair,
+        asset_type: "crypto",
+        quantity: qty,
+        avg_price: price,
+      });
+    }
+    await admin
+      .from("portfolios")
+      .update({ cash_balance: cash - usd })
+      .eq("id", portfolio.id);
+    await admin.from("trades").insert({
+      portfolio_id: portfolio.id,
+      user_id: userId,
+      symbol: pair,
+      asset_type: "crypto",
+      side: "buy",
+      quantity: qty,
+      price,
+      total_value: usd,
+    });
+    return true;
+  }
+
+  // SELL: liquidar la posición si existe.
+  const { data: pos } = await admin
+    .from("positions")
+    .select("id, quantity, avg_price")
+    .eq("portfolio_id", portfolio.id)
+    .eq("symbol", pair)
+    .maybeSingle();
+  if (!pos || Number(pos.quantity) <= 0) return false;
+
+  const qty = Number(pos.quantity);
+  const proceeds = qty * price;
+  const pnl = (price - Number(pos.avg_price)) * qty;
+  await admin.from("positions").delete().eq("id", pos.id);
+  await admin
+    .from("portfolios")
+    .update({ cash_balance: cash + proceeds })
+    .eq("id", portfolio.id);
+  await admin.from("trades").insert({
+    portfolio_id: portfolio.id,
+    user_id: userId,
+    symbol: pair,
+    asset_type: "crypto",
+    side: "sell",
+    quantity: qty,
+    price,
+    total_value: proceeds,
+    pnl,
+  });
+  return true;
 }
 
 Deno.serve(async (req) => {

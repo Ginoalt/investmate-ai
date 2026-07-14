@@ -9,13 +9,22 @@ import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, LogOut, Loader2, LayoutDashboard } from "lucide-react";
+import {
+  TrendingUp,
+  LogOut,
+  Loader2,
+  LayoutDashboard,
+  Wallet,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_authed")({
   component: AuthedLayout,
 });
 
-const NAV = [{ to: "/", label: "Dashboard", icon: LayoutDashboard }] as const;
+const NAV = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/portfolio", label: "Portafolio", icon: Wallet },
+] as const;
 
 function AuthedLayout() {
   const { user, loading } = useAuth();
