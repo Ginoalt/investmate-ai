@@ -1,12 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { fetchKlines, toBinancePair } from "@/lib/market";
+import { fetchKlines, toBinancePair, baseAsset } from "@/lib/market";
 import { optimize, type OptimizerResult } from "@/lib/optimizer";
+import { useAgentConfigs, useSaveAgentConfig } from "@/lib/agent-config";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Wand2, Loader2, Info, CheckCircle2, AlertTriangle } from "lucide-react";
+import {
+  Wand2,
+  Loader2,
+  Info,
+  CheckCircle2,
+  AlertTriangle,
+  Check,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_authed/optimizar")({
   component: Optimizar,
@@ -23,6 +31,29 @@ function Optimizar() {
   const [results, setResults] = useState<OptimizerResult[] | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const save = useSaveAgentConfig();
+  const configs = useAgentConfigs();
+
+  const pair = toBinancePair(symbol);
+  const appliedFor = configs.data?.find((c) => c.symbol === pair) ?? null;
+
+  function apply(r: OptimizerResult) {
+    save.mutate({
+      symbol: pair,
+      params: {
+        threshold: r.params.threshold,
+        stopLossPct: r.params.stopLossPct,
+        takeProfitPct: r.params.takeProfitPct,
+        trailingStopPct: r.params.trailingStopPct,
+        useRegimeFilter: r.params.useRegimeFilter,
+        useVolumeFilter: r.params.useVolumeFilter,
+        volumeFactor: r.params.volumeFactor,
+      },
+      inSample: r.inSample.totalReturnPct,
+      outOfSample: r.outOfSample.totalReturnPct,
+      robust: r.robust,
+    });
+  }
 
   async function run() {
     setRunning(true);
@@ -110,6 +141,15 @@ function Optimizar() {
             </span>
           </div>
 
+          {appliedFor && (
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-500">
+              <Check className="h-4 w-4" />
+              El agente ya usa una config para {baseAsset(pair)}: out-of-sample{" "}
+              {(appliedFor.out_of_sample_return ?? 0).toFixed(1)}%
+              {appliedFor.robust ? " (robusta)" : ""}. Podés reemplazarla abajo.
+            </div>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Mejores configuraciones</CardTitle>
@@ -124,15 +164,27 @@ function Optimizar() {
                       <th className="pb-2 text-right">Out-of-sample</th>
                       <th className="pb-2 text-center">Robusta</th>
                       <th className="pb-2">Parámetros</th>
+                      <th className="pb-2 text-right">Agente</th>
                     </tr>
                   </thead>
                   <tbody>
                     {results.map((r, i) => (
-                      <ResultRow key={i} rank={i + 1} r={r} />
+                      <ResultRow
+                        key={i}
+                        rank={i + 1}
+                        r={r}
+                        onApply={() => apply(r)}
+                        saving={save.isPending}
+                      />
                     ))}
                   </tbody>
                 </table>
               </div>
+              {save.isError && (
+                <p className="mt-2 text-sm text-destructive">
+                  No se pudo aplicar. ¿La migración de agent_configs está aplicada?
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -148,7 +200,17 @@ function Optimizar() {
   );
 }
 
-function ResultRow({ rank, r }: { rank: number; r: OptimizerResult }) {
+function ResultRow({
+  rank,
+  r,
+  onApply,
+  saving,
+}: {
+  rank: number;
+  r: OptimizerResult;
+  onApply: () => void;
+  saving: boolean;
+}) {
   const inRet = r.inSample.totalReturnPct;
   const outRet = r.outOfSample.totalReturnPct;
   const p = r.params;
@@ -181,6 +243,11 @@ function ResultRow({ rank, r }: { rank: number; r: OptimizerResult }) {
         {p.trailingStopPct > 0 ? ` · trail ${p.trailingStopPct}%` : ""}
         {p.useRegimeFilter ? " · régimen" : ""}
         {p.useVolumeFilter ? " · volumen" : ""}
+      </td>
+      <td className="py-2 text-right">
+        <Button size="sm" variant="outline" onClick={onApply} disabled={saving}>
+          Aplicar
+        </Button>
       </td>
     </tr>
   );
