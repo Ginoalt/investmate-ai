@@ -125,16 +125,39 @@ function Backtest() {
             <Param label="SMA larga" value={params.smaLong} onChange={(v) => set("smaLong", v)} />
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={params.useRegimeFilter}
-              onChange={(e) => set("useRegimeFilter", e.target.checked)}
-              className="h-4 w-4 accent-primary"
-            />
-            Filtro de régimen: no comprar cuando el mercado está bajista (precio
-            bajo su media de {params.regimePeriod} días)
-          </label>
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={params.useRegimeFilter}
+                onChange={(e) => set("useRegimeFilter", e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              Filtro de régimen: no comprar en mercado bajista (precio bajo su
+              media de {params.regimePeriod} días)
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={params.useVolumeFilter}
+                onChange={(e) => set("useVolumeFilter", e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              Confirmación por volumen: solo entra si el volumen supera{" "}
+              {params.volumeFactor}× el promedio{" "}
+              <span className="text-xs text-muted-foreground">(opcional)</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={params.useMultiTimeframe}
+                onChange={(e) => set("useMultiTimeframe", e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              Multi-timeframe: solo entra si el marco semanal también es alcista{" "}
+              <span className="text-xs text-muted-foreground">(opcional)</span>
+            </label>
+          </div>
 
           <div className="flex items-center gap-3">
             <Button onClick={run} disabled={running}>
