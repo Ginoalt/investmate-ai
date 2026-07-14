@@ -1,1 +1,7 @@
 project_id = "nrwhvcyxylsiwsbvlmwn"
+
+# El agente se llama de dos formas: manual (con JWT del usuario, validado
+# adentro) y por cron (sin JWT, autenticado con x-agent-secret). Por eso
+# desactivamos la verificación automática de JWT y la manejamos en el código.
+[functions.run-agent]
+verify_jwt = false
