@@ -10,3 +10,7 @@ verify_jwt = false
 # y escribe con service role; no maneja datos por-usuario en la request.
 [functions.fetch-news]
 verify_jwt = false
+
+# reoptimize la llama el cron (sin JWT). Autenticada por {mode:"cron"} adentro.
+[functions.reoptimize]
+verify_jwt = false
