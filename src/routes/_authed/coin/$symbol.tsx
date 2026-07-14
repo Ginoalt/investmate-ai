@@ -19,6 +19,7 @@ import {
 } from "@/lib/market";
 import { sma, smaSeries, rsi, rsiZone, trend } from "@/lib/indicators";
 import { OrderFlowPanel } from "@/components/order-flow-panel";
+import { NewsFeed } from "@/components/news-feed";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -223,6 +224,9 @@ function CoinDetail() {
 
       {/* Flujo de órdenes y ballenas */}
       <OrderFlowPanel pair={pair} />
+
+      {/* Noticias de la moneda */}
+      <NewsFeed symbol={symbol} title={`Noticias de ${symbol.toUpperCase()}`} />
 
       <p className="text-xs text-muted-foreground">
         Indicadores calculados sobre velas diarias. Herramienta educativa, no es
