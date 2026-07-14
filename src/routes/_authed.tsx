@@ -15,6 +15,7 @@ import {
   Loader2,
   LayoutDashboard,
   Wallet,
+  Activity,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authed")({
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/_authed")({
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/actividad", label: "Actividad", icon: Activity },
   { to: "/portfolio", label: "Portafolio", icon: Wallet },
 ] as const;
 

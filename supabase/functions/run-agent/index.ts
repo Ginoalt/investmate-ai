@@ -400,6 +400,51 @@ async function executeDecision(
   return true;
 }
 
+/** Guarda un snapshot del valor del portafolio (para la curva de evolución). */
+async function writeSnapshot(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+) {
+  const { data: portfolio } = await admin
+    .from("portfolios")
+    .select("id, cash_balance")
+    .eq("user_id", userId)
+    .single();
+  if (!portfolio) return;
+  const cash = Number(portfolio.cash_balance);
+
+  const { data: positions } = await admin
+    .from("positions")
+    .select("symbol, quantity")
+    .eq("portfolio_id", portfolio.id)
+    .gt("quantity", 0);
+
+  let positionsValue = 0;
+  const list = positions ?? [];
+  if (list.length > 0) {
+    try {
+      const symbols = encodeURIComponent(
+        JSON.stringify(list.map((p: { symbol: string }) => p.symbol)),
+      );
+      const res = await fetch(`${SPOT}/ticker/price?symbols=${symbols}`);
+      if (res.ok) {
+        const prices = (await res.json()) as { symbol: string; price: string }[];
+        const by = new Map(prices.map((p) => [p.symbol, Number(p.price)]));
+        for (const p of list) {
+          positionsValue += Number(p.quantity) * (by.get(p.symbol) ?? 0);
+        }
+      }
+    } catch (_e) { /* si falla el precio, va 0 */ }
+  }
+
+  await admin.from("portfolio_snapshots").insert({
+    user_id: userId,
+    cash,
+    positions_value: positionsValue,
+    equity: cash + positionsValue,
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -430,6 +475,7 @@ Deno.serve(async (req) => {
         for (const w of wl ?? []) {
           results.push(await analyzeCoin(admin, p.user_id, w.symbol));
         }
+        await writeSnapshot(admin, p.user_id);
       }
     } else {
       // Modo manual: resolver el usuario del JWT.
@@ -462,6 +508,7 @@ Deno.serve(async (req) => {
       for (const pair of pairs) {
         results.push(await analyzeCoin(admin, userId, pair));
       }
+      await writeSnapshot(admin, userId);
     }
 
     return new Response(JSON.stringify({ analyzed: results.length, results }), {
