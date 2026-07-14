@@ -319,12 +319,10 @@ function RiskPanel({ isPaused }: { isPaused: boolean }) {
               value={val("max_position_pct")}
               onChange={(v) => setDraft((d) => ({ ...d, max_position_pct: v }))}
             />
-            <RiskField
-              label="Confianza mínima del agente (0-1)"
-              value={val("min_confidence")}
-              step={0.05}
-              onChange={(v) => setDraft((d) => ({ ...d, min_confidence: v }))}
-            />
+            <p className="text-xs text-muted-foreground">
+              El bot decide su propio nivel de confianza por moneda (umbral
+              optimizado) — no hay perilla manual.
+            </p>
             <div className="flex flex-wrap gap-2 pt-1">
               <Button
                 size="sm"
