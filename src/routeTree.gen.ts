@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedCoinSymbolRouteImport } from './routes/_authed/coin/$symbol'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -27,27 +28,35 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedCoinSymbolRoute = AuthedCoinSymbolRouteImport.update({
+  id: '/coin/$symbol',
+  path: '/coin/$symbol',
+  getParentRoute: () => AuthedRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/auth': typeof AuthRoute
+  '/coin/$symbol': typeof AuthedCoinSymbolRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/': typeof AuthedIndexRoute
+  '/coin/$symbol': typeof AuthedCoinSymbolRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authed/': typeof AuthedIndexRoute
+  '/_authed/coin/$symbol': typeof AuthedCoinSymbolRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth'
+  fullPaths: '/' | '/auth' | '/coin/$symbol'
   fileRoutesByTo: FileRoutesByTo
-  to: '/auth' | '/'
-  id: '__root__' | '/_authed' | '/auth' | '/_authed/'
+  to: '/auth' | '/' | '/coin/$symbol'
+  id: '__root__' | '/_authed' | '/auth' | '/_authed/' | '/_authed/coin/$symbol'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -78,15 +87,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/coin/$symbol': {
+      id: '/_authed/coin/$symbol'
+      path: '/coin/$symbol'
+      fullPath: '/coin/$symbol'
+      preLoaderRoute: typeof AuthedCoinSymbolRouteImport
+      parentRoute: typeof AuthedRoute
+    }
   }
 }
 
 interface AuthedRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
+  AuthedCoinSymbolRoute: typeof AuthedCoinSymbolRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedIndexRoute: AuthedIndexRoute,
+  AuthedCoinSymbolRoute: AuthedCoinSymbolRoute,
 }
 
 const AuthedRouteWithChildren =
