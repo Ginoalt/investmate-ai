@@ -20,6 +20,7 @@ import {
 import { sma, smaSeries, rsi, rsiZone, trend } from "@/lib/indicators";
 import { OrderFlowPanel } from "@/components/order-flow-panel";
 import { NewsFeed } from "@/components/news-feed";
+import { AgentPanel } from "@/components/agent-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -221,6 +222,9 @@ function CoinDetail() {
           loading={klines.isLoading}
         />
       </div>
+
+      {/* Agente super trader */}
+      <AgentPanel symbol={symbol} />
 
       {/* Flujo de órdenes y ballenas */}
       <OrderFlowPanel pair={pair} />
