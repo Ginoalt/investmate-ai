@@ -31,6 +31,14 @@ export const Route = createFileRoute("/_authed/actividad")({
   component: Actividad,
 });
 
+function safeWhen(iso: string): string {
+  try {
+    return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: es });
+  } catch {
+    return "";
+  }
+}
+
 const ACTION: Record<string, { label: string; cls: string }> = {
   buy: { label: "Comprar", cls: "bg-emerald-500/10 text-emerald-500" },
   sell: { label: "Vender", cls: "bg-red-500/10 text-red-500" },
@@ -270,9 +278,13 @@ function Actividad() {
                         {t.side === "buy" ? "Compra" : "Venta"}
                       </span>
                       <span className="font-medium">{baseAsset(t.symbol)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {t.quantity.toPrecision(3)} @ {formatPrice(t.price)}
+                      </span>
                     </span>
                     <span className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span>{formatPrice(t.total_value)}</span>
+                      <span>{safeWhen(t.executed_at)}</span>
                       {t.pnl != null && (
                         <span
                           className={

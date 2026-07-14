@@ -1,6 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { formatDistanceToNow } from "date-fns";
+import { es } from "date-fns/locale";
+
+function tradeWhen(iso: string): string {
+  try {
+    return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: es });
+  } catch {
+    return "";
+  }
+}
 import {
   usePortfolio,
   usePositions,
@@ -192,6 +202,9 @@ function PortfolioPage() {
                     <span className="font-medium">{baseAsset(t.symbol)}</span>
                     <span className="text-muted-foreground">
                       {t.quantity.toPrecision(4)} @ {formatPrice(t.price)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      · {tradeWhen(t.executed_at)}
                     </span>
                   </span>
                   <span className="flex items-center gap-3">
