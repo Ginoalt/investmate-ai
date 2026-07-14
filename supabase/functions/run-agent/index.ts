@@ -12,6 +12,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SPOT = "https://data-api.binance.vision/api/v3";
+
+// Universo de monedas líquidas que el bot analiza y elige SOLO (sin depender
+// de la watchlist del usuario). El agente decide en cuáles entrar y en cuáles no.
+const UNIVERSE = [
+  "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
+  "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT", "LTCUSDT", "TRXUSDT",
+  "ATOMUSDT", "UNIUSDT", "NEARUSDT", "APTUSDT", "ARBUSDT", "INJUSDT",
+];
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -610,13 +619,16 @@ Deno.serve(async (req) => {
         .select("user_id")
         .eq("is_paused", false);
       for (const p of portfolios ?? []) {
+        // El bot elige del universo + lo que el usuario haya agregado a mano.
         const { data: wl } = await admin
           .from("watchlist")
           .select("symbol")
           .eq("user_id", p.user_id)
           .eq("asset_type", "crypto");
-        for (const w of wl ?? []) {
-          results.push(await analyzeCoin(admin, p.user_id, w.symbol));
+        const extra = (wl ?? []).map((w: { symbol: string }) => w.symbol);
+        const coins = Array.from(new Set([...UNIVERSE, ...extra]));
+        for (const symbol of coins) {
+          results.push(await analyzeCoin(admin, p.user_id, symbol));
         }
         await writeSnapshot(admin, p.user_id);
       }
