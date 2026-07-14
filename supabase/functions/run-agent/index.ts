@@ -108,8 +108,8 @@ function fibScore(
 }
 
 async function marketSignals(pair: string) {
-  // klines para indicadores
-  const kl = await fetch(`${SPOT}/klines?symbol=${pair}&interval=1d&limit=60`);
+  // 150 velas: suficiente para la media de régimen (SMA100) y el resto.
+  const kl = await fetch(`${SPOT}/klines?symbol=${pair}&interval=1d&limit=150`);
   const candles = (await kl.json()) as unknown[][];
   const closes = candles.map((c) => Number(c[4]));
   const ohlc = candles.map((c) => ({
@@ -123,6 +123,9 @@ async function marketSignals(pair: string) {
   const macd = macdScore(closes);
   const boll = bollScore(closes);
   const fib = fibScore(ohlc);
+  // Régimen de mercado: alcista si el precio está sobre su media de largo plazo.
+  const regimeSma = sma(closes, 100) ?? sma(closes, 50);
+  const regimeBullish = regimeSma == null || price > regimeSma;
   let trend: "alcista" | "bajista" | "lateral" = "lateral";
   if (s20 != null && s50 != null) {
     const spread = (s20 - s50) / s50;
@@ -156,7 +159,7 @@ async function marketSignals(pair: string) {
     if (buy + sell > 0) cvd = (buy / (buy + sell) - 0.5) * 2;
   } catch (_e) { /* idem */ }
 
-  return { price, rsi: r, trend, imbalance, cvd, macd, boll, fib };
+  return { price, rsi: r, trend, imbalance, cvd, macd, boll, fib, regimeBullish };
 }
 
 // ---------- decisión por reglas ----------
@@ -341,6 +344,7 @@ async function analyzeCoin(
     action,
     confidence,
     signals.price,
+    signals.regimeBullish,
   );
   if (executed && decision?.id) {
     await admin.from("decisions").update({ executed: true }).eq("id", decision.id);
@@ -361,8 +365,10 @@ async function executeDecision(
   action: "buy" | "sell" | "hold",
   confidence: number,
   price: number,
+  regimeBullish: boolean,
 ): Promise<boolean> {
-  if (action === "hold" || price <= 0) return false;
+  if (price <= 0) return false;
+  const TAKE_PROFIT_PCT = 25; // objetivo de ganancia por posición
 
   const { data: portfolio } = await admin
     .from("portfolios")
@@ -373,13 +379,62 @@ async function executeDecision(
 
   const { data: risk } = await admin
     .from("risk_settings")
-    .select("min_confidence, max_position_pct, max_daily_loss_pct")
+    .select("min_confidence, max_position_pct, max_daily_loss_pct, stop_loss_pct")
     .eq("user_id", userId)
     .single();
   const minConf = Number(risk?.min_confidence ?? 0.6);
   const maxPosPct = Number(risk?.max_position_pct ?? 25);
   const maxDailyLossPct = Number(risk?.max_daily_loss_pct ?? 5);
-  if (confidence < minConf) return false;
+  const stopLossPct = Number(risk?.stop_loss_pct ?? 10);
+  const initial = Number(portfolio.initial_balance);
+  const cash = Number(portfolio.cash_balance);
+
+  // Posición actual en el par.
+  const { data: pos } = await admin
+    .from("positions")
+    .select("id, quantity, avg_price")
+    .eq("portfolio_id", portfolio.id)
+    .eq("symbol", pair)
+    .maybeSingle();
+  const hasPos = pos && Number(pos.quantity) > 0;
+
+  const sellAll = async () => {
+    const qty = Number(pos!.quantity);
+    const proceeds = qty * price;
+    const pnl = (price - Number(pos!.avg_price)) * qty;
+    await admin.from("positions").delete().eq("id", pos!.id);
+    await admin
+      .from("portfolios")
+      .update({ cash_balance: cash + proceeds })
+      .eq("id", portfolio.id);
+    await admin.from("trades").insert({
+      portfolio_id: portfolio.id,
+      user_id: userId,
+      symbol: pair,
+      asset_type: "crypto",
+      side: "sell",
+      quantity: qty,
+      price,
+      total_value: proceeds,
+      pnl,
+    });
+  };
+
+  // 1) Salidas de protección (se aplican SIEMPRE, más allá de la decisión).
+  if (hasPos) {
+    const avg = Number(pos!.avg_price);
+    if (price <= avg * (1 - stopLossPct / 100)) {
+      await sellAll();
+      return true;
+    }
+    if (price >= avg * (1 + TAKE_PROFIT_PCT / 100)) {
+      await sellAll();
+      return true;
+    }
+  }
+
+  // 2) Decisión del agente.
+  if (action === "hold" || confidence < minConf) return false;
 
   // Límite de pérdida diaria: si ya se superó, pausar y no operar.
   const startOfDay = new Date();
@@ -393,91 +448,54 @@ async function executeDecision(
     (sum: number, t: { pnl: number | null }) => sum + (Number(t.pnl) || 0),
     0,
   );
-  const initial = Number(portfolio.initial_balance);
   if (realizedToday <= -(initial * (maxDailyLossPct / 100))) {
     await admin.from("portfolios").update({ is_paused: true }).eq("id", portfolio.id);
     return false;
   }
 
-  const cash = Number(portfolio.cash_balance);
+  if (action === "sell") {
+    if (!hasPos) return false;
+    await sellAll();
+    return true;
+  }
 
-  if (action === "buy") {
-    const usd = Math.min((maxPosPct / 100) * initial, cash);
-    if (usd < 1) return false;
-    const qty = usd / price;
+  // BUY — el filtro de régimen impide comprar en mercado bajista.
+  if (!regimeBullish) return false;
+  const usd = Math.min((maxPosPct / 100) * initial, cash);
+  if (usd < 1) return false;
+  const qty = usd / price;
 
-    const { data: existing } = await admin
-      .from("positions")
-      .select("id, quantity, avg_price")
-      .eq("portfolio_id", portfolio.id)
-      .eq("symbol", pair)
-      .maybeSingle();
-
-    if (existing) {
-      const oldQty = Number(existing.quantity);
-      const oldAvg = Number(existing.avg_price);
-      const newQty = oldQty + qty;
-      await admin
-        .from("positions")
-        .update({
-          quantity: newQty,
-          avg_price: (oldQty * oldAvg + qty * price) / newQty,
-        })
-        .eq("id", existing.id);
-    } else {
-      await admin.from("positions").insert({
-        portfolio_id: portfolio.id,
-        user_id: userId,
-        symbol: pair,
-        asset_type: "crypto",
-        quantity: qty,
-        avg_price: price,
-      });
-    }
+  if (hasPos) {
+    const oldQty = Number(pos!.quantity);
+    const oldAvg = Number(pos!.avg_price);
+    const newQty = oldQty + qty;
     await admin
-      .from("portfolios")
-      .update({ cash_balance: cash - usd })
-      .eq("id", portfolio.id);
-    await admin.from("trades").insert({
+      .from("positions")
+      .update({ quantity: newQty, avg_price: (oldQty * oldAvg + qty * price) / newQty })
+      .eq("id", pos!.id);
+  } else {
+    await admin.from("positions").insert({
       portfolio_id: portfolio.id,
       user_id: userId,
       symbol: pair,
       asset_type: "crypto",
-      side: "buy",
       quantity: qty,
-      price,
-      total_value: usd,
+      avg_price: price,
     });
-    return true;
   }
-
-  // SELL: liquidar la posición si existe.
-  const { data: pos } = await admin
-    .from("positions")
-    .select("id, quantity, avg_price")
-    .eq("portfolio_id", portfolio.id)
-    .eq("symbol", pair)
-    .maybeSingle();
-  if (!pos || Number(pos.quantity) <= 0) return false;
-
-  const qty = Number(pos.quantity);
-  const proceeds = qty * price;
-  const pnl = (price - Number(pos.avg_price)) * qty;
-  await admin.from("positions").delete().eq("id", pos.id);
   await admin
     .from("portfolios")
-    .update({ cash_balance: cash + proceeds })
+    .update({ cash_balance: cash - usd })
     .eq("id", portfolio.id);
   await admin.from("trades").insert({
     portfolio_id: portfolio.id,
     user_id: userId,
     symbol: pair,
     asset_type: "crypto",
-    side: "sell",
+    side: "buy",
     quantity: qty,
     price,
-    total_value: proceeds,
-    pnl,
+    total_value: usd,
   });
   return true;
 }
