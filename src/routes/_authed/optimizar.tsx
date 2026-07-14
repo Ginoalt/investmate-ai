@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { fetchKlines, toBinancePair, baseAsset } from "@/lib/market";
+import type { BacktestParams } from "@/lib/backtest";
 import { optimize, type OptimizerResult } from "@/lib/optimizer";
 import { useAgentConfigs, useSaveAgentConfig } from "@/lib/agent-config";
+import { useWatchlist } from "@/lib/watchlist";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +16,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Check,
+  Bot,
+  Sparkles,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authed/optimizar")({
@@ -36,6 +40,74 @@ function Optimizar() {
 
   const pair = toBinancePair(symbol);
   const appliedFor = configs.data?.find((c) => c.symbol === pair) ?? null;
+
+  const watchlist = useWatchlist();
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [autoLog, setAutoLog] = useState<
+    { symbol: string; status: string; ok: boolean }[]
+  >([]);
+
+  function saveParams(r: OptimizerResult): Partial<BacktestParams> {
+    return {
+      threshold: r.params.threshold,
+      stopLossPct: r.params.stopLossPct,
+      takeProfitPct: r.params.takeProfitPct,
+      trailingStopPct: r.params.trailingStopPct,
+      useRegimeFilter: r.params.useRegimeFilter,
+      useVolumeFilter: r.params.useVolumeFilter,
+      volumeFactor: r.params.volumeFactor,
+    };
+  }
+
+  // El bot se optimiza solo: para cada moneda de la watchlist busca la mejor
+  // config robusta y la aplica. El usuario no elige nada.
+  async function autoOptimizeAll() {
+    const coins = (watchlist.data ?? []).map((w) => w.symbol);
+    if (coins.length === 0) {
+      setAutoLog([
+        {
+          symbol: "—",
+          status: "Tu watchlist está vacía. Agregá monedas en Mercado.",
+          ok: false,
+        },
+      ]);
+      return;
+    }
+    setAutoRunning(true);
+    setAutoLog([]);
+    for (const pairSym of coins) {
+      const b = baseAsset(pairSym);
+      try {
+        const candles = await fetchKlines(pairSym, "1d", 365);
+        if (candles.length < 120) throw new Error("pocos datos históricos");
+        const found = optimize(candles);
+        const best = found.find((r) => r.robust) ?? found[0];
+        if (!best) throw new Error("sin config válida");
+        await save.mutateAsync({
+          symbol: pairSym,
+          params: saveParams(best),
+          inSample: best.inSample.totalReturnPct,
+          outOfSample: best.outOfSample.totalReturnPct,
+          robust: best.robust,
+        });
+        setAutoLog((l) => [
+          ...l,
+          {
+            symbol: b,
+            status: `aplicada · out-of-sample ${best.outOfSample.totalReturnPct.toFixed(1)}%${best.robust ? " (robusta)" : ""}`,
+            ok: true,
+          },
+        ]);
+      } catch (err) {
+        setAutoLog((l) => [
+          ...l,
+          { symbol: b, status: err instanceof Error ? err.message : "error", ok: false },
+        ]);
+      }
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    setAutoRunning(false);
+  }
 
   function apply(r: OptimizerResult) {
     save.mutate({
@@ -85,11 +157,69 @@ function Optimizar() {
         </p>
       </div>
 
+      {/* El bot se optimiza solo — la forma "no decido nada" */}
+      <Card className="border-primary/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="h-4 w-4" />
+            Que el bot se optimice solo
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">
+            Un clic y el bot busca la mejor config <b>robusta</b> para cada
+            moneda de tu watchlist y la aplica solo. No elegís nada — el agente
+            la usa en su próxima corrida.
+          </p>
+          <div>
+            <Button onClick={autoOptimizeAll} disabled={autoRunning}>
+              {autoRunning ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {autoRunning
+                ? "Optimizando tu watchlist…"
+                : "Auto-optimizar mi bot"}
+            </Button>
+          </div>
+          {autoLog.length > 0 && (
+            <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+              {autoLog.map((r, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between px-3 py-2 text-sm"
+                >
+                  <span className="font-medium">{r.symbol}</span>
+                  <span
+                    className={`flex items-center gap-1.5 text-xs ${
+                      r.ok ? "text-emerald-500" : "text-amber-500"
+                    }`}
+                  >
+                    {r.ok ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                    )}
+                    {r.status}
+                  </span>
+                </div>
+              ))}
+              {!autoRunning && autoLog.some((r) => r.ok) && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  Listo. El agente usará estas configs en su próxima corrida.
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Wand2 className="h-4 w-4" />
-            Buscar la mejor estrategia
+            O buscá y elegí a mano
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
