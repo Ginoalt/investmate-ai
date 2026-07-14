@@ -1,16 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { formatDistanceToNow } from "date-fns";
-import { es } from "date-fns/locale";
-
-function tradeWhen(iso: string): string {
-  try {
-    return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: es });
-  } catch {
-    return "";
-  }
-}
+import { LiveTrades } from "@/components/live-trades";
 import {
   usePortfolio,
   usePositions,
@@ -170,62 +161,8 @@ function PortfolioPage() {
         <RiskPanel isPaused={portfolio.data?.is_paused ?? false} />
       </div>
 
-      {/* Historial */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Historial de operaciones</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {trades.isLoading ? (
-            <Skeleton className="h-24 w-full" />
-          ) : (trades.data?.length ?? 0) === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Todavía no hay operaciones.
-            </p>
-          ) : (
-            <div className="flex flex-col divide-y divide-border">
-              {trades.data!.map((t) => (
-                <div
-                  key={t.id}
-                  className="flex items-center justify-between py-2 text-sm"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                        t.side === "buy"
-                          ? "bg-emerald-500/10 text-emerald-500"
-                          : "bg-red-500/10 text-red-500"
-                      }`}
-                    >
-                      {t.side === "buy" ? "Compra" : "Venta"}
-                    </span>
-                    <span className="font-medium">{baseAsset(t.symbol)}</span>
-                    <span className="text-muted-foreground">
-                      {t.quantity.toPrecision(4)} @ {formatPrice(t.price)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      · {tradeWhen(t.executed_at)}
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-3">
-                    <span>{formatPrice(t.total_value)}</span>
-                    {t.pnl != null && (
-                      <span
-                        className={
-                          t.pnl >= 0 ? "text-emerald-500" : "text-red-500"
-                        }
-                      >
-                        {t.pnl >= 0 ? "+" : ""}
-                        {formatPrice(t.pnl)}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Feed en vivo de lo que opera el bot */}
+      <LiveTrades />
     </div>
   );
 }
