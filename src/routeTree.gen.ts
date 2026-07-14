@@ -13,6 +13,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedPortfolioRouteImport } from './routes/_authed/portfolio'
+import { Route as AuthedBacktestRouteImport } from './routes/_authed/backtest'
 import { Route as AuthedActividadRouteImport } from './routes/_authed/actividad'
 import { Route as AuthedCoinSymbolRouteImport } from './routes/_authed/coin/$symbol'
 
@@ -35,6 +36,11 @@ const AuthedPortfolioRoute = AuthedPortfolioRouteImport.update({
   path: '/portfolio',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedBacktestRoute = AuthedBacktestRouteImport.update({
+  id: '/backtest',
+  path: '/backtest',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedActividadRoute = AuthedActividadRouteImport.update({
   id: '/actividad',
   path: '/actividad',
@@ -50,12 +56,14 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/auth': typeof AuthRoute
   '/actividad': typeof AuthedActividadRoute
+  '/backtest': typeof AuthedBacktestRoute
   '/portfolio': typeof AuthedPortfolioRoute
   '/coin/$symbol': typeof AuthedCoinSymbolRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/actividad': typeof AuthedActividadRoute
+  '/backtest': typeof AuthedBacktestRoute
   '/portfolio': typeof AuthedPortfolioRoute
   '/': typeof AuthedIndexRoute
   '/coin/$symbol': typeof AuthedCoinSymbolRoute
@@ -65,20 +73,34 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authed/actividad': typeof AuthedActividadRoute
+  '/_authed/backtest': typeof AuthedBacktestRoute
   '/_authed/portfolio': typeof AuthedPortfolioRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/coin/$symbol': typeof AuthedCoinSymbolRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/actividad' | '/portfolio' | '/coin/$symbol'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/actividad'
+    | '/backtest'
+    | '/portfolio'
+    | '/coin/$symbol'
   fileRoutesByTo: FileRoutesByTo
-  to: '/auth' | '/actividad' | '/portfolio' | '/' | '/coin/$symbol'
+  to:
+    | '/auth'
+    | '/actividad'
+    | '/backtest'
+    | '/portfolio'
+    | '/'
+    | '/coin/$symbol'
   id:
     | '__root__'
     | '/_authed'
     | '/auth'
     | '/_authed/actividad'
+    | '/_authed/backtest'
     | '/_authed/portfolio'
     | '/_authed/'
     | '/_authed/coin/$symbol'
@@ -119,6 +141,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedPortfolioRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/backtest': {
+      id: '/_authed/backtest'
+      path: '/backtest'
+      fullPath: '/backtest'
+      preLoaderRoute: typeof AuthedBacktestRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/actividad': {
       id: '/_authed/actividad'
       path: '/actividad'
@@ -138,6 +167,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthedRouteChildren {
   AuthedActividadRoute: typeof AuthedActividadRoute
+  AuthedBacktestRoute: typeof AuthedBacktestRoute
   AuthedPortfolioRoute: typeof AuthedPortfolioRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedCoinSymbolRoute: typeof AuthedCoinSymbolRoute
@@ -145,6 +175,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedActividadRoute: AuthedActividadRoute,
+  AuthedBacktestRoute: AuthedBacktestRoute,
   AuthedPortfolioRoute: AuthedPortfolioRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedCoinSymbolRoute: AuthedCoinSymbolRoute,
