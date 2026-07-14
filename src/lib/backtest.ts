@@ -10,7 +10,7 @@
 // (RSI, tendencia, momentum). El resto se valida hacia adelante con el paper
 // trading (panel "¿el agente acierta?" y la curva de evolución).
 import type { Candle } from "@/lib/market";
-import { sma, rsi } from "@/lib/indicators";
+import { sma, rsi, macd, bollinger, fibonacci } from "@/lib/indicators";
 
 export type BacktestParams = {
   smaShort: number;
@@ -61,8 +61,12 @@ export type BacktestResult = {
   };
 };
 
-/** Score técnico -1..1 con los datos hasta `closes` (última vela = actual). */
-function technicalScore(closes: number[], p: BacktestParams): number {
+/**
+ * Score técnico -1..1 con los datos hasta la última vela de `candles`.
+ * Combina tendencia, RSI, momentum, MACD, Bollinger y Fibonacci.
+ */
+function technicalScore(candles: Candle[], p: BacktestParams): number {
+  const closes = candles.map((c) => c.close);
   const price = closes[closes.length - 1];
   const s20 = sma(closes, p.smaShort);
   const s50 = sma(closes, p.smaLong);
@@ -81,15 +85,24 @@ function technicalScore(closes: number[], p: BacktestParams): number {
     else if (r > p.rsiOverbought) rsiBias = -1;
   }
 
-  // momentum: retorno de las últimas ~10 velas
   let momentum = 0;
   if (closes.length > 10) {
     const past = closes[closes.length - 11];
-    const ret = (price - past) / past;
-    momentum = Math.max(-1, Math.min(1, ret * 10));
+    momentum = Math.max(-1, Math.min(1, ((price - past) / past) * 10));
   }
 
-  return 0.4 * trendScore + 0.35 * rsiBias + 0.25 * momentum;
+  const m = macd(closes);
+  const b = bollinger(closes);
+  const f = fibonacci(candles);
+
+  return (
+    0.25 * trendScore +
+    0.2 * rsiBias +
+    0.1 * momentum +
+    0.2 * (m?.score ?? 0) +
+    0.1 * (b?.score ?? 0) +
+    0.15 * (f?.score ?? 0)
+  );
 }
 
 export function runBacktest(
@@ -108,17 +121,14 @@ export function runBacktest(
   let peak = p.initialCapital;
   let maxDrawdownPct = 0;
 
-  const closes: number[] = [];
-
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
-    closes.push(c.close);
     if (i < warmup) {
       equityCurve.push({ time: c.time, equity: cash, price: c.close });
       continue;
     }
 
-    const score = technicalScore(closes, p);
+    const score = technicalScore(candles.slice(0, i + 1), p);
     const inPosition = qty > 0;
 
     // Salida por stop-loss

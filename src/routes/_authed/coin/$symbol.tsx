@@ -9,6 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  ReferenceLine,
 } from "recharts";
 import {
   fetchKlines,
@@ -17,7 +18,14 @@ import {
   formatPrice,
   formatPercent,
 } from "@/lib/market";
-import { sma, smaSeries, rsi, rsiZone, trend } from "@/lib/indicators";
+import {
+  sma,
+  smaSeries,
+  rsi,
+  rsiZone,
+  trend,
+  fibonacci,
+} from "@/lib/indicators";
 import { OrderFlowPanel } from "@/components/order-flow-panel";
 import { NewsFeed } from "@/components/news-feed";
 import { AgentPanel } from "@/components/agent-panel";
@@ -57,6 +65,11 @@ function CoinDetail() {
   const zone = rsiZone(rsi14);
   const t = closes.length ? trend(closes) : "lateral";
   const sma20Full = smaSeries(closes, 20);
+  const fib =
+    (klines.data?.length ?? 0) >= 10 ? fibonacci(klines.data ?? []) : null;
+  // Niveles clave de Fibonacci para dibujar en el gráfico.
+  const fibLevels =
+    fib?.levels.filter((l) => [0.382, 0.5, 0.618].includes(l.ratio)) ?? [];
 
   // Datos del gráfico: últimas `range` velas con su SMA20.
   const chartData = (klines.data ?? [])
@@ -174,6 +187,21 @@ function CoinDetail() {
                   }}
                   formatter={(v: number) => formatPrice(v)}
                 />
+                {fibLevels.map((l) => (
+                  <ReferenceLine
+                    key={l.ratio}
+                    y={l.price}
+                    stroke="#f59e0b"
+                    strokeDasharray="2 3"
+                    strokeOpacity={0.5}
+                    label={{
+                      value: `Fib ${l.ratio}`,
+                      position: "insideTopRight",
+                      fontSize: 10,
+                      fill: "#f59e0b",
+                    }}
+                  />
+                ))}
                 <Line
                   type="monotone"
                   dataKey="close"

@@ -41,14 +41,88 @@ function rsi(v: number[], p = 14): number | null {
   return 100 - 100 / (1 + ag / al);
 }
 
+function emaSeries(v: number[], p: number): (number | null)[] {
+  const out: (number | null)[] = new Array(v.length).fill(null);
+  if (v.length < p) return out;
+  const k = 2 / (p + 1);
+  let prev = v.slice(0, p).reduce((a, b) => a + b, 0) / p;
+  out[p - 1] = prev;
+  for (let i = p; i < v.length; i++) {
+    prev = v[i] * k + prev * (1 - k);
+    out[i] = prev;
+  }
+  return out;
+}
+
+/** MACD score -1..1. */
+function macdScore(v: number[]): number {
+  if (v.length < 35) return 0;
+  const ef = emaSeries(v, 12), es = emaSeries(v, 26);
+  const ml = v.map((_, i) => (ef[i] != null && es[i] != null ? (ef[i] as number) - (es[i] as number) : null));
+  const clean = ml.filter((x): x is number => x != null);
+  const sa = emaSeries(clean, 9);
+  const mv = clean[clean.length - 1], sv = sa[sa.length - 1];
+  if (mv == null || sv == null) return 0;
+  const price = v[v.length - 1] || 1;
+  return Math.max(-1, Math.min(1, ((mv - sv) / price) * 300));
+}
+
+/** Bollinger score -1..1 (positivo = cerca de banda inferior). */
+function bollScore(v: number[], p = 20, mult = 2): number {
+  if (v.length < p) return 0;
+  const s = v.slice(-p);
+  const mid = s.reduce((a, b) => a + b, 0) / p;
+  const sd = Math.sqrt(s.reduce((a, b) => a + (b - mid) ** 2, 0) / p);
+  const up = mid + mult * sd, lo = mid - mult * sd;
+  const price = v[v.length - 1];
+  const w = up - lo;
+  const pb = w > 0 ? (price - lo) / w : 0.5;
+  return Math.max(-1, Math.min(1, (0.5 - pb) * 2));
+}
+
+/** Fibonacci score -1..1 sobre el swing de las últimas velas. */
+function fibScore(
+  candles: { high: number; low: number; close: number }[],
+  lookback = 60,
+): number {
+  const s = candles.slice(-lookback);
+  if (s.length < 10) return 0;
+  let hi = -Infinity, lo = Infinity, hiI = 0, loI = 0;
+  s.forEach((c, i) => {
+    if (c.high > hi) { hi = c.high; hiI = i; }
+    if (c.low < lo) { lo = c.low; loI = i; }
+  });
+  const trend = hiI >= loI ? "up" : "down";
+  const range = hi - lo || 1;
+  const price = s[s.length - 1].close;
+  const retr = trend === "up" ? (hi - price) / range : (price - lo) / range;
+  if (trend === "up") {
+    if (retr >= 0.3 && retr <= 0.65) return 0.6;
+    if (retr > 0.8) return -0.5;
+    if (retr < 0.15) return 0.15;
+  } else {
+    if (retr >= 0.3 && retr <= 0.65) return -0.6;
+    if (retr > 0.8) return 0.5;
+  }
+  return 0;
+}
+
 async function marketSignals(pair: string) {
   // klines para indicadores
   const kl = await fetch(`${SPOT}/klines?symbol=${pair}&interval=1d&limit=60`);
   const candles = (await kl.json()) as unknown[][];
   const closes = candles.map((c) => Number(c[4]));
+  const ohlc = candles.map((c) => ({
+    high: Number(c[2]),
+    low: Number(c[3]),
+    close: Number(c[4]),
+  }));
   const price = closes[closes.length - 1] ?? 0;
   const r = rsi(closes, 14);
   const s20 = sma(closes, 20), s50 = sma(closes, 50);
+  const macd = macdScore(closes);
+  const boll = bollScore(closes);
+  const fib = fibScore(ohlc);
   let trend: "alcista" | "bajista" | "lateral" = "lateral";
   if (s20 != null && s50 != null) {
     const spread = (s20 - s50) / s50;
@@ -82,7 +156,7 @@ async function marketSignals(pair: string) {
     if (buy + sell > 0) cvd = (buy / (buy + sell) - 0.5) * 2;
   } catch (_e) { /* idem */ }
 
-  return { price, rsi: r, trend, imbalance, cvd };
+  return { price, rsi: r, trend, imbalance, cvd, macd, boll, fib };
 }
 
 // ---------- decisión por reglas ----------
@@ -98,11 +172,16 @@ function decide(s: Signals) {
     if (s.rsi < 30) rsiBias = 0.5; // sobrevendido -> sesgo compra
     else if (s.rsi > 70) rsiBias = -0.5; // sobrecomprado -> sesgo venta
   }
+  // Flujo de órdenes sigue pesando fuerte (0.5), + análisis técnico avanzado
+  // (0.4: tendencia, MACD, Fibonacci, Bollinger) + noticias/RSI (0.1).
   const score =
-    0.4 * s.imbalance +
-    0.25 * s.cvd +
-    0.2 * trendScore +
-    0.1 * s.newsScore +
+    0.3 * s.imbalance +
+    0.2 * s.cvd +
+    0.15 * trendScore +
+    0.1 * s.macd +
+    0.1 * s.fib +
+    0.05 * s.boll +
+    0.05 * s.newsScore +
     0.05 * rsiBias;
 
   let action: "buy" | "sell" | "hold" = "hold";
@@ -132,7 +211,7 @@ const SYSTEM_PROMPT =
   "Sos un trader cripto experto. Explicá en 2-3 frases, en español rioplatense, por qué la decisión sugerida tiene sentido según las señales. Sé concreto, mencioná las señales que más pesan. No des consejo financiero personalizado; es un análisis educativo.";
 
 async function aiRationale(symbol: string, s: Signals, action: string): Promise<string> {
-  const userMsg = `Moneda ${symbol}. Decisión: ${action}. Señales -> order book imbalance: ${s.imbalance.toFixed(2)}, CVD: ${s.cvd.toFixed(2)}, tendencia: ${s.trend}, RSI: ${s.rsi?.toFixed(0) ?? "n/d"}, sentimiento noticias: ${s.newsScore.toFixed(2)}.`;
+  const userMsg = `Moneda ${symbol}. Decisión: ${action}. Señales -> order book imbalance: ${s.imbalance.toFixed(2)}, CVD: ${s.cvd.toFixed(2)}, tendencia: ${s.trend}, RSI: ${s.rsi?.toFixed(0) ?? "n/d"}, MACD: ${s.macd.toFixed(2)}, Fibonacci: ${s.fib.toFixed(2)}, Bollinger: ${s.boll.toFixed(2)}, sentimiento noticias: ${s.newsScore.toFixed(2)}.`;
 
   const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
@@ -245,6 +324,9 @@ async function analyzeCoin(
         trend: signals.trend,
         imbalance: signals.imbalance,
         cvd: signals.cvd,
+        macd: signals.macd,
+        fib: signals.fib,
+        boll: signals.boll,
       },
       sentiment: { newsScore },
       price_at_decision: signals.price,
