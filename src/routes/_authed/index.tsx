@@ -15,6 +15,7 @@ import {
   useAddToWatchlist,
   useRemoveFromWatchlist,
 } from "@/lib/watchlist";
+import { NewsFeed } from "@/components/news-feed";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -145,6 +146,9 @@ function Dashboard() {
               />
             ))}
       </div>
+
+      {/* Feed general de noticias cripto */}
+      <NewsFeed title="Noticias del mercado" />
     </div>
   );
 }
