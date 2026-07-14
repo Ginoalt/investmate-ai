@@ -222,7 +222,12 @@ async function aiRationale(symbol: string, s: Signals, action: string): Promise<
 
   const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
-  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  // Lovable AI solo si se activa explícitamente (consume créditos de Lovable).
+  // Por defecto NO se usa: sin key propia, la explicación es texto templado gratis.
+  const lovableKey =
+    Deno.env.get("USE_LOVABLE_AI") === "true"
+      ? Deno.env.get("LOVABLE_API_KEY")
+      : undefined;
 
   try {
     if (anthropicKey) {
