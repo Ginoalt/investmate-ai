@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_configs: {
+        Row: {
+          id: string
+          in_sample_return: number | null
+          out_of_sample_return: number | null
+          params: Json
+          robust: boolean
+          symbol: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          in_sample_return?: number | null
+          out_of_sample_return?: number | null
+          params: Json
+          robust?: boolean
+          symbol: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          in_sample_return?: number | null
+          out_of_sample_return?: number | null
+          params?: Json
+          robust?: boolean
+          symbol?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       decisions: {
         Row: {
           action: Database["public"]["Enums"]["decision_action"]
