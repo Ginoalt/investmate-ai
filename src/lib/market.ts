@@ -44,6 +44,41 @@ export async function fetch24h(pairs: string[]): Promise<Ticker24h[]> {
   }));
 }
 
+export type Candle = {
+  time: number; // openTime en ms
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+/**
+ * Trae velas (klines) de un par. `interval` ej. "1d", "1h", "4h".
+ * Devuelve las velas ordenadas de más vieja a más nueva.
+ */
+export async function fetchKlines(
+  pair: string,
+  interval: string,
+  limit: number,
+): Promise<Candle[]> {
+  const res = await fetch(
+    `${BINANCE}/klines?symbol=${pair}&interval=${interval}&limit=${limit}`,
+  );
+  if (!res.ok) {
+    throw new Error(`Binance klines ${res.status}: ${await res.text()}`);
+  }
+  const raw = (await res.json()) as unknown[][];
+  return raw.map((k) => ({
+    time: Number(k[0]),
+    open: Number(k[1]),
+    high: Number(k[2]),
+    low: Number(k[3]),
+    close: Number(k[4]),
+    volume: Number(k[5]),
+  }));
+}
+
 /** Formatea un precio en USD con precisión adaptada a la magnitud. */
 export function formatPrice(value: number): string {
   if (!Number.isFinite(value)) return "—";
