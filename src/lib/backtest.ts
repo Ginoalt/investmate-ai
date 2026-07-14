@@ -21,6 +21,11 @@ export type BacktestParams = {
   threshold: number; // score mínimo para operar (0-1)
   stopLossPct: number; // corta la posición si cae este %
   initialCapital: number;
+  // Reducción de pérdidas:
+  useRegimeFilter: boolean; // no comprar si el mercado está bajista
+  regimePeriod: number; // SMA de largo plazo para el régimen
+  trailingStopPct: number; // 0 = off; corta si cae este % desde el máximo alcanzado
+  takeProfitPct: number; // 0 = off; toma ganancia a este % sobre la entrada
 };
 
 export const DEFAULT_PARAMS: BacktestParams = {
@@ -32,6 +37,10 @@ export const DEFAULT_PARAMS: BacktestParams = {
   threshold: 0.2,
   stopLossPct: 8,
   initialCapital: 100,
+  useRegimeFilter: true,
+  regimePeriod: 100,
+  trailingStopPct: 12,
+  takeProfitPct: 25,
 };
 
 export type BacktestTrade = {
@@ -41,7 +50,7 @@ export type BacktestTrade = {
   exitPrice: number;
   pnl: number;
   pnlPct: number;
-  reason: "signal" | "stop-loss";
+  reason: "signal" | "stop-loss" | "trailing" | "take-profit";
 };
 
 export type EquityPoint = { time: number; equity: number; price: number };
@@ -120,6 +129,24 @@ export function runBacktest(
   const equityCurve: EquityPoint[] = [];
   let peak = p.initialCapital;
   let maxDrawdownPct = 0;
+  let peakSinceEntry = 0; // máximo precio alcanzado desde la entrada (trailing)
+
+  const closes = candles.map((c) => c.close);
+
+  const closeAt = (c: Candle, reason: BacktestTrade["reason"]) => {
+    const proceeds = qty * c.close;
+    trades.push({
+      entryTime,
+      exitTime: c.time,
+      entryPrice,
+      exitPrice: c.close,
+      pnl: proceeds - qty * entryPrice,
+      pnlPct: ((c.close - entryPrice) / entryPrice) * 100,
+      reason,
+    });
+    cash += proceeds;
+    qty = 0;
+  };
 
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
@@ -131,41 +158,35 @@ export function runBacktest(
     const score = technicalScore(candles.slice(0, i + 1), p);
     const inPosition = qty > 0;
 
-    // Salida por stop-loss
-    if (inPosition && c.close <= entryPrice * (1 - p.stopLossPct / 100)) {
-      const proceeds = qty * c.close;
-      const pnl = proceeds - qty * entryPrice;
-      trades.push({
-        entryTime,
-        exitTime: c.time,
-        entryPrice,
-        exitPrice: c.close,
-        pnl,
-        pnlPct: ((c.close - entryPrice) / entryPrice) * 100,
-        reason: "stop-loss",
-      });
-      cash += proceeds;
-      qty = 0;
-    } else if (inPosition && score < -p.threshold) {
-      // Salida por señal
-      const proceeds = qty * c.close;
-      const pnl = proceeds - qty * entryPrice;
-      trades.push({
-        entryTime,
-        exitTime: c.time,
-        entryPrice,
-        exitPrice: c.close,
-        pnl,
-        pnlPct: ((c.close - entryPrice) / entryPrice) * 100,
-        reason: "signal",
-      });
-      cash += proceeds;
-      qty = 0;
-    } else if (!inPosition && score > p.threshold) {
-      // Entrada: todo el capital disponible
+    // Régimen de mercado: alcista si el precio está sobre su media de largo plazo.
+    const regimeSma = sma(closes.slice(0, i + 1), p.regimePeriod);
+    const regimeBullish =
+      !p.useRegimeFilter || regimeSma == null || c.close > regimeSma;
+
+    if (inPosition) {
+      if (c.close > peakSinceEntry) peakSinceEntry = c.close;
+      // Prioridad de salidas: stop-loss > trailing > take-profit > señal.
+      if (c.close <= entryPrice * (1 - p.stopLossPct / 100)) {
+        closeAt(c, "stop-loss");
+      } else if (
+        p.trailingStopPct > 0 &&
+        c.close <= peakSinceEntry * (1 - p.trailingStopPct / 100)
+      ) {
+        closeAt(c, "trailing");
+      } else if (
+        p.takeProfitPct > 0 &&
+        c.close >= entryPrice * (1 + p.takeProfitPct / 100)
+      ) {
+        closeAt(c, "take-profit");
+      } else if (score < -p.threshold) {
+        closeAt(c, "signal");
+      }
+    } else if (score > p.threshold && regimeBullish) {
+      // Entrada: todo el capital disponible (solo si el régimen no es bajista).
       qty = cash / c.close;
       entryPrice = c.close;
       entryTime = c.time;
+      peakSinceEntry = c.close;
       cash = 0;
     }
 

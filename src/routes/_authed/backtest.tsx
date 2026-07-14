@@ -57,7 +57,7 @@ function Backtest() {
     }
   }
 
-  const set = (k: keyof BacktestParams, v: number) =>
+  const set = (k: keyof BacktestParams, v: number | boolean) =>
     setParams((p) => ({ ...p, [k]: v }));
 
   const chartData =
@@ -117,11 +117,24 @@ function Backtest() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Param label="Umbral señal" value={params.threshold} step={0.05} onChange={(v) => set("threshold", v)} />
             <Param label="Stop-loss %" value={params.stopLossPct} onChange={(v) => set("stopLossPct", v)} />
+            <Param label="Trailing stop %" value={params.trailingStopPct} onChange={(v) => set("trailingStopPct", v)} />
+            <Param label="Take-profit %" value={params.takeProfitPct} onChange={(v) => set("takeProfitPct", v)} />
             <Param label="RSI sobreventa" value={params.rsiOversold} onChange={(v) => set("rsiOversold", v)} />
             <Param label="RSI sobrecompra" value={params.rsiOverbought} onChange={(v) => set("rsiOverbought", v)} />
             <Param label="SMA corta" value={params.smaShort} onChange={(v) => set("smaShort", v)} />
             <Param label="SMA larga" value={params.smaLong} onChange={(v) => set("smaLong", v)} />
           </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={params.useRegimeFilter}
+              onChange={(e) => set("useRegimeFilter", e.target.checked)}
+              className="h-4 w-4 accent-primary"
+            />
+            Filtro de régimen: no comprar cuando el mercado está bajista (precio
+            bajo su media de {params.regimePeriod} días)
+          </label>
 
           <div className="flex items-center gap-3">
             <Button onClick={run} disabled={running}>
