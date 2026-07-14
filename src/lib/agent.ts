@@ -12,6 +12,9 @@ export type Decision = {
     trend?: string;
     imbalance?: number;
     cvd?: number;
+    macd?: number;
+    fib?: number;
+    boll?: number;
   } | null;
   sentiment: { newsScore?: number } | null;
   price_at_decision: number;
