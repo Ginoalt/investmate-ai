@@ -18,6 +18,7 @@ import {
   Activity,
   FlaskConical,
   Wand2,
+  GraduationCap,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authed")({
@@ -25,8 +26,9 @@ export const Route = createFileRoute("/_authed")({
 });
 
 const NAV = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/actividad", label: "Actividad", icon: Activity },
+  { to: "/actividad", label: "Mi bot", icon: Activity },
+  { to: "/", label: "Mercado", icon: LayoutDashboard },
+  { to: "/aprender", label: "Aprender", icon: GraduationCap },
   { to: "/portfolio", label: "Portafolio", icon: Wallet },
   { to: "/backtest", label: "Backtest", icon: FlaskConical },
   { to: "/optimizar", label: "Optimizar", icon: Wand2 },

@@ -15,6 +15,7 @@ import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedPortfolioRouteImport } from './routes/_authed/portfolio'
 import { Route as AuthedOptimizarRouteImport } from './routes/_authed/optimizar'
 import { Route as AuthedBacktestRouteImport } from './routes/_authed/backtest'
+import { Route as AuthedAprenderRouteImport } from './routes/_authed/aprender'
 import { Route as AuthedActividadRouteImport } from './routes/_authed/actividad'
 import { Route as AuthedCoinSymbolRouteImport } from './routes/_authed/coin/$symbol'
 
@@ -47,6 +48,11 @@ const AuthedBacktestRoute = AuthedBacktestRouteImport.update({
   path: '/backtest',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedAprenderRoute = AuthedAprenderRouteImport.update({
+  id: '/aprender',
+  path: '/aprender',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedActividadRoute = AuthedActividadRouteImport.update({
   id: '/actividad',
   path: '/actividad',
@@ -62,6 +68,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/auth': typeof AuthRoute
   '/actividad': typeof AuthedActividadRoute
+  '/aprender': typeof AuthedAprenderRoute
   '/backtest': typeof AuthedBacktestRoute
   '/optimizar': typeof AuthedOptimizarRoute
   '/portfolio': typeof AuthedPortfolioRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/actividad': typeof AuthedActividadRoute
+  '/aprender': typeof AuthedAprenderRoute
   '/backtest': typeof AuthedBacktestRoute
   '/optimizar': typeof AuthedOptimizarRoute
   '/portfolio': typeof AuthedPortfolioRoute
@@ -81,6 +89,7 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authed/actividad': typeof AuthedActividadRoute
+  '/_authed/aprender': typeof AuthedAprenderRoute
   '/_authed/backtest': typeof AuthedBacktestRoute
   '/_authed/optimizar': typeof AuthedOptimizarRoute
   '/_authed/portfolio': typeof AuthedPortfolioRoute
@@ -93,6 +102,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/actividad'
+    | '/aprender'
     | '/backtest'
     | '/optimizar'
     | '/portfolio'
@@ -101,6 +111,7 @@ export interface FileRouteTypes {
   to:
     | '/auth'
     | '/actividad'
+    | '/aprender'
     | '/backtest'
     | '/optimizar'
     | '/portfolio'
@@ -111,6 +122,7 @@ export interface FileRouteTypes {
     | '/_authed'
     | '/auth'
     | '/_authed/actividad'
+    | '/_authed/aprender'
     | '/_authed/backtest'
     | '/_authed/optimizar'
     | '/_authed/portfolio'
@@ -167,6 +179,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedBacktestRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/aprender': {
+      id: '/_authed/aprender'
+      path: '/aprender'
+      fullPath: '/aprender'
+      preLoaderRoute: typeof AuthedAprenderRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/actividad': {
       id: '/_authed/actividad'
       path: '/actividad'
@@ -186,6 +205,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthedRouteChildren {
   AuthedActividadRoute: typeof AuthedActividadRoute
+  AuthedAprenderRoute: typeof AuthedAprenderRoute
   AuthedBacktestRoute: typeof AuthedBacktestRoute
   AuthedOptimizarRoute: typeof AuthedOptimizarRoute
   AuthedPortfolioRoute: typeof AuthedPortfolioRoute
@@ -195,6 +215,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedActividadRoute: AuthedActividadRoute,
+  AuthedAprenderRoute: AuthedAprenderRoute,
   AuthedBacktestRoute: AuthedBacktestRoute,
   AuthedOptimizarRoute: AuthedOptimizarRoute,
   AuthedPortfolioRoute: AuthedPortfolioRoute,
