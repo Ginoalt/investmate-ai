@@ -26,6 +26,10 @@ export type BacktestParams = {
   regimePeriod: number; // SMA de largo plazo para el régimen
   trailingStopPct: number; // 0 = off; corta si cae este % desde el máximo alcanzado
   takeProfitPct: number; // 0 = off; toma ganancia a este % sobre la entrada
+  // Suba de aciertos (confirmación de entrada):
+  useVolumeFilter: boolean; // solo entra si el volumen confirma
+  volumeFactor: number; // volumen actual >= promedio * factor
+  useMultiTimeframe: boolean; // solo entra si el marco mayor (semanal) también es alcista
 };
 
 export const DEFAULT_PARAMS: BacktestParams = {
@@ -41,6 +45,11 @@ export const DEFAULT_PARAMS: BacktestParams = {
   regimePeriod: 100,
   trailingStopPct: 12,
   takeProfitPct: 25,
+  // Opcionales, apagados por defecto: en backtest no mejoraron de forma
+  // confiable (a veces reducen pérdidas, a veces filtran buenos trades).
+  useVolumeFilter: false,
+  volumeFactor: 1.3,
+  useMultiTimeframe: false,
 };
 
 export type BacktestTrade = {
@@ -114,6 +123,17 @@ function technicalScore(candles: Candle[], p: BacktestParams): number {
   );
 }
 
+/** ¿El marco mayor (semanal, muestreado cada 7 velas) está alcista? */
+function higherTfBullish(closes: number[], i: number): boolean {
+  const weekly: number[] = [];
+  for (let j = 0; j <= i; j += 7) weekly.push(closes[j]);
+  if (weekly[weekly.length - 1] !== closes[i]) weekly.push(closes[i]);
+  if (weekly.length < 5) return true;
+  const recent = weekly.slice(-4);
+  const wsma = recent.reduce((a, b) => a + b, 0) / recent.length;
+  return closes[i] > wsma;
+}
+
 export function runBacktest(
   candles: Candle[],
   params: BacktestParams,
@@ -163,6 +183,18 @@ export function runBacktest(
     const regimeBullish =
       !p.useRegimeFilter || regimeSma == null || c.close > regimeSma;
 
+    // Confirmación por volumen: el volumen actual sobre el promedio reciente.
+    const volOK =
+      !p.useVolumeFilter ||
+      (() => {
+        const vols = candles.slice(Math.max(0, i - 19), i + 1).map((x) => x.volume);
+        const avg = vols.reduce((a, b) => a + b, 0) / vols.length;
+        return avg > 0 ? candles[i].volume >= avg * p.volumeFactor : true;
+      })();
+
+    // Multi-timeframe: el marco mayor (semanal, muestreado cada 7 velas) alcista.
+    const mtfOK = !p.useMultiTimeframe || higherTfBullish(closes, i);
+
     if (inPosition) {
       if (c.close > peakSinceEntry) peakSinceEntry = c.close;
       // Prioridad de salidas: stop-loss > trailing > take-profit > señal.
@@ -181,8 +213,8 @@ export function runBacktest(
       } else if (score < -p.threshold) {
         closeAt(c, "signal");
       }
-    } else if (score > p.threshold && regimeBullish) {
-      // Entrada: todo el capital disponible (solo si el régimen no es bajista).
+    } else if (score > p.threshold && regimeBullish && volOK && mtfOK) {
+      // Entrada: todo el capital disponible (con régimen, volumen y marco mayor a favor).
       qty = cash / c.close;
       entryPrice = c.close;
       entryTime = c.time;
