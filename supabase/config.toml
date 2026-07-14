@@ -5,3 +5,8 @@ project_id = "nrwhvcyxylsiwsbvlmwn"
 # desactivamos la verificación automática de JWT y la manejamos en el código.
 [functions.run-agent]
 verify_jwt = false
+
+# fetch-news la llama el cron (sin JWT) y el frontend. Solo lee RSS públicos
+# y escribe con service role; no maneja datos por-usuario en la request.
+[functions.fetch-news]
+verify_jwt = false

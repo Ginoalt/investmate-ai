@@ -157,6 +157,16 @@ function Backtest() {
               Multi-timeframe: solo entra si el marco semanal también es alcista{" "}
               <span className="text-xs text-muted-foreground">(opcional)</span>
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={params.useConviction}
+                onChange={(e) => set("useConviction", e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              Sizing por convicción: compra más grande cuando la señal es más
+              fuerte (Soros/Kelly)
+            </label>
           </div>
 
           <div className="flex items-center gap-3">

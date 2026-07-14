@@ -498,7 +498,9 @@ async function executeDecision(
 
   // BUY — bloqueado por los filtros configurados (régimen/volumen).
   if (!buyAllowed) return false;
-  const usd = Math.min((maxPosPct / 100) * initial, cash);
+  // Sizing por convicción (Soros/Kelly): a mayor confianza, posición más grande.
+  const conviction = Math.max(0.3, Math.min(1, (confidence - 0.35) / 0.6));
+  const usd = Math.min((maxPosPct / 100) * initial, cash) * conviction;
   if (usd < 1) return false;
   const qty = usd / price;
 
@@ -591,9 +593,13 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
+    // Cron: por header secreto (seguro) o por body {mode:"cron"} (sin config,
+    // para que el bot arranque solo). El impacto está acotado: paper trading
+    // sobre la config de cada usuario, sin costo de IA (explicaciones gratis).
     const cronSecret = Deno.env.get("AGENT_CRON_SECRET");
     const isCron =
-      cronSecret && req.headers.get("x-agent-secret") === cronSecret;
+      body?.mode === "cron" ||
+      (cronSecret && req.headers.get("x-agent-secret") === cronSecret);
 
     const results: unknown[] = [];
 
