@@ -117,6 +117,10 @@ async function marketSignals(pair: string) {
     low: Number(c[3]),
     close: Number(c[4]),
   }));
+  const volumes = candles.map((c) => Number(c[5]));
+  const volWindow = volumes.slice(-20);
+  const volAvg = volWindow.reduce((a, b) => a + b, 0) / (volWindow.length || 1);
+  const volumeRatio = volAvg > 0 ? volumes[volumes.length - 1] / volAvg : 1;
   const price = closes[closes.length - 1] ?? 0;
   const r = rsi(closes, 14);
   const s20 = sma(closes, 20), s50 = sma(closes, 50);
@@ -159,7 +163,7 @@ async function marketSignals(pair: string) {
     if (buy + sell > 0) cvd = (buy / (buy + sell) - 0.5) * 2;
   } catch (_e) { /* idem */ }
 
-  return { price, rsi: r, trend, imbalance, cvd, macd, boll, fib, regimeBullish };
+  return { price, rsi: r, trend, imbalance, cvd, macd, boll, fib, regimeBullish, volumeRatio };
 }
 
 // ---------- decisión por reglas ----------
@@ -168,7 +172,7 @@ type Signals = Awaited<ReturnType<typeof marketSignals>> & {
   newsScore: number;
 };
 
-function decide(s: Signals) {
+function decide(s: Signals, threshold = 0.2) {
   const trendScore = s.trend === "alcista" ? 1 : s.trend === "bajista" ? -1 : 0;
   let rsiBias = 0;
   if (s.rsi != null) {
@@ -188,8 +192,8 @@ function decide(s: Signals) {
     0.05 * rsiBias;
 
   let action: "buy" | "sell" | "hold" = "hold";
-  if (score > 0.2) action = "buy";
-  else if (score < -0.2) action = "sell";
+  if (score > threshold) action = "buy";
+  else if (score < -threshold) action = "sell";
 
   const confidence = Math.max(0.05, Math.min(0.95, 0.35 + Math.abs(score) * 0.6));
   return { action, confidence: Number(confidence.toFixed(3)), score };
@@ -310,8 +314,34 @@ async function analyzeCoin(
   const newsScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
 
   const signals: Signals = { ...market, newsScore };
-  const { action, confidence } = decide(signals);
+
+  // Config óptima para esta moneda (del optimizador). Si no hay, defaults.
+  const { data: cfgRow } = await admin
+    .from("agent_configs")
+    .select("params")
+    .eq("user_id", userId)
+    .eq("symbol", pair)
+    .maybeSingle();
+  const cfg = (cfgRow?.params ?? {}) as {
+    threshold?: number;
+    stopLossPct?: number;
+    takeProfitPct?: number;
+    useRegimeFilter?: boolean;
+    useVolumeFilter?: boolean;
+    volumeFactor?: number;
+  };
+  const threshold = cfg.threshold ?? 0.2;
+  const useRegime = cfg.useRegimeFilter ?? true;
+  const useVolume = cfg.useVolumeFilter ?? false;
+  const volumeFactor = cfg.volumeFactor ?? 1.3;
+
+  const { action, confidence } = decide(signals, threshold);
   const rationale = await aiRationale(symbol, signals, action);
+
+  // Permiso de compra según los filtros configurados.
+  const buyAllowed =
+    (!useRegime || signals.regimeBullish) &&
+    (!useVolume || signals.volumeRatio >= volumeFactor);
 
   const { data: decision } = await admin
     .from("decisions")
@@ -344,7 +374,8 @@ async function analyzeCoin(
     action,
     confidence,
     signals.price,
-    signals.regimeBullish,
+    buyAllowed,
+    { stopLossPct: cfg.stopLossPct, takeProfitPct: cfg.takeProfitPct },
   );
   if (executed && decision?.id) {
     await admin.from("decisions").update({ executed: true }).eq("id", decision.id);
@@ -365,10 +396,11 @@ async function executeDecision(
   action: "buy" | "sell" | "hold",
   confidence: number,
   price: number,
-  regimeBullish: boolean,
+  buyAllowed: boolean,
+  overrides: { stopLossPct?: number; takeProfitPct?: number } = {},
 ): Promise<boolean> {
   if (price <= 0) return false;
-  const TAKE_PROFIT_PCT = 25; // objetivo de ganancia por posición
+  const takeProfitPct = overrides.takeProfitPct ?? 25; // objetivo de ganancia
 
   const { data: portfolio } = await admin
     .from("portfolios")
@@ -385,7 +417,7 @@ async function executeDecision(
   const minConf = Number(risk?.min_confidence ?? 0.6);
   const maxPosPct = Number(risk?.max_position_pct ?? 25);
   const maxDailyLossPct = Number(risk?.max_daily_loss_pct ?? 5);
-  const stopLossPct = Number(risk?.stop_loss_pct ?? 10);
+  const stopLossPct = overrides.stopLossPct ?? Number(risk?.stop_loss_pct ?? 10);
   const initial = Number(portfolio.initial_balance);
   const cash = Number(portfolio.cash_balance);
 
@@ -427,7 +459,7 @@ async function executeDecision(
       await sellAll();
       return true;
     }
-    if (price >= avg * (1 + TAKE_PROFIT_PCT / 100)) {
+    if (price >= avg * (1 + takeProfitPct / 100)) {
       await sellAll();
       return true;
     }
@@ -459,8 +491,8 @@ async function executeDecision(
     return true;
   }
 
-  // BUY — el filtro de régimen impide comprar en mercado bajista.
-  if (!regimeBullish) return false;
+  // BUY — bloqueado por los filtros configurados (régimen/volumen).
+  if (!buyAllowed) return false;
   const usd = Math.min((maxPosPct / 100) * initial, cash);
   if (usd < 1) return false;
   const qty = usd / price;
