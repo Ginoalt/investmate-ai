@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   Wallet,
   Activity,
+  FlaskConical,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authed")({
@@ -26,6 +27,7 @@ const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/actividad", label: "Actividad", icon: Activity },
   { to: "/portfolio", label: "Portafolio", icon: Wallet },
+  { to: "/backtest", label: "Backtest", icon: FlaskConical },
 ] as const;
 
 function AuthedLayout() {
