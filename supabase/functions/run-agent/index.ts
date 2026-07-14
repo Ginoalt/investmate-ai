@@ -428,7 +428,6 @@ async function executeDecision(
     .select("min_confidence, max_position_pct, max_daily_loss_pct, stop_loss_pct")
     .eq("user_id", userId)
     .single();
-  const minConf = Number(risk?.min_confidence ?? 0.6);
   const maxPosPct = Number(risk?.max_position_pct ?? 25);
   const maxDailyLossPct = Number(risk?.max_daily_loss_pct ?? 5);
   const stopLossPct = overrides.stopLossPct ?? Number(risk?.stop_loss_pct ?? 10);
@@ -480,7 +479,10 @@ async function executeDecision(
   }
 
   // 2) Decisión del agente.
-  if (action === "hold" || confidence < minConf) return false;
+  // Sin perilla manual de confianza: el bot ejecuta lo que decidió según su
+  // umbral optimizado por moneda. La convicción ya modula el tamaño (señal
+  // débil = posición chica), y los demás guardarraíles protegen igual.
+  if (action === "hold") return false;
 
   // Límite de pérdida diaria: si ya se superó, pausar y no operar.
   const startOfDay = new Date();
